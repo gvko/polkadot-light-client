@@ -1,11 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { config } from '../common/config';
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { Header } from '@polkadot/types/interfaces';
 import { BaseTrie as Tree } from 'merkle-patricia-tree';
 import { Proof } from 'merkle-patricia-tree/dist.browser/baseTrie';
 
-interface PolkadotHeader {
+export interface PolkadotHeader {
   number: number;
   hash: string;
   // other header fields?
@@ -80,14 +80,14 @@ export class ClientService {
     this.headers = [];
   }
 
-  queryHeaderByNumber(number: number): PolkadotHeader | undefined {
+  getHeaderByNumber(number: number): PolkadotHeader | undefined {
     return undefined;
   }
 
-  async queryHeaderByHash(hash: string): Promise<PolkadotHeader> {
+  async getHeaderByHash(hash: string): Promise<PolkadotHeader> {
     const header = await this.tree.get(Buffer.from(hash));
     if (!header) {
-      throw new Error(`No header stored with given hash: ${hash}`);
+      throw new InternalServerErrorException(`No header stored with given hash: ${hash}`);
     }
 
     return JSON.parse(header.toString());
