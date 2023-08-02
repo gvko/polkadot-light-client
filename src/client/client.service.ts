@@ -66,10 +66,12 @@ export class ClientService {
     this.logger.log('Write headers to merkle tree');
 
     for (const header of this.headers) {
-      const key = Buffer.from(header.hash);
+      const keyHash = Buffer.from(header.hash);
+      const keyNumber = Buffer.from(header.number.toString());
       const value = Buffer.from(JSON.stringify(header));
 
-      await this.tree.put(key, value);
+      await this.tree.put(keyHash, value);
+      await this.tree.put(keyNumber, value);
       this.proofs[header.hash] = await this.generateMerkleProof(header.hash);
       // const verifiedProof = await this.verifyMerkleProof(header.hash);
       // this.logger.log(`Verified proof for hash ${header.hash}: `, verifiedProof);
@@ -82,8 +84,13 @@ export class ClientService {
     this.headers = [];
   }
 
-  getHeaderByNumber(number: number): PolkadotHeader | undefined {
-    return undefined;
+  async getHeaderByNumber(number: number): Promise<PolkadotHeader> {
+    const header = await this.tree.get(Buffer.from(number.toString()));
+    if (!header) {
+      throw new InternalServerErrorException(`No header stored with given number: ${number}`);
+    }
+
+    return JSON.parse(header.toString());
   }
 
   async getHeaderByHash(hash: string): Promise<PolkadotHeader> {
