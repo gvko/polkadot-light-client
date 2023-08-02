@@ -1,78 +1,104 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { config } from '../common/config';
-import { Contract, providers, Wallet } from 'ethers';
-import tokenAbi from '../contract-abi/Token';
-import stakingAbi from '../contract-abi/Stakearna';
-import { TransactionResponse } from '@ethersproject/providers'
+import { ApiPromise, WsProvider } from '@polkadot/api';
+import { Header } from '@polkadot/types/interfaces';
+import { BaseTrie as Tree } from 'merkle-patricia-tree';
+import { Proof } from 'merkle-patricia-tree/dist.browser/baseTrie';
+
+interface PolkadotHeader {
+  number: number;
+  hash: string;
+  // other header fields?
+}
+
+interface InclusionProofs {
+  [key: string]: Proof;
+}
 
 @Injectable()
-export class Web3ProviderService {
+export class ClientService {
   private readonly logger: Logger;
-  private readonly provider;
-  private readonly wallet: Wallet;
-  private readonly tokenContract: Contract;
-  private readonly stakingContract: Contract;
+  private readonly headerBatchSize: number;
+  private headers: PolkadotHeader[];
+  private merkleRoots: Buffer[];
+  private readonly proofs: InclusionProofs;
+  private readonly tree: Tree;
+  private readonly provider: WsProvider;
 
   constructor() {
-    this.logger = new Logger(Web3ProviderService.name);
-    this.provider = new providers.AlchemyProvider('goerli', config().ethNode.apiKey);
-    this.wallet = new Wallet(config().ethNode.walletPrivKey, this.provider);
-    this.tokenContract = new Contract(config().contract.tokenContract, tokenAbi.abi, this.wallet);
-    this.stakingContract = new Contract(config().contract.stakingContract, stakingAbi.abi, this.wallet);
+    this.logger = new Logger(ClientService.name);
+    this.headerBatchSize = config().headerBatchSize;
+    this.headers = [];
+    this.merkleRoots = [];
+    this.proofs = {};
+    this.tree = new Tree();
+    this.provider = new WsProvider(config().node.apiUrl);
+
+    this.connect();
   }
 
-  private async approveAllowance(address: string, amount: number) {
-    this.logger.log(`Approve allowance of ${amount} for ${address}`);
-    const gasPrice = await this.provider.getGasPrice();
-    const gasEstimate = await this.tokenContract.estimateGas.approve(address, amount);
+  async connect(): Promise<void> {
+    const api = await ApiPromise.create({provider: this.provider});
+    this.logger.log('Subscribe to incoming headers...');
 
-    try {
-      const tx: TransactionResponse = await this.tokenContract.functions.approve(address, amount, {
-        gasPrice,
-        gasLimit: gasEstimate.toNumber() * 3
-      });
-      await tx.wait(1);
-      this.logger.log(`Tx hash: ${tx.hash}`);
-    } catch (err) {
-      this.logger.error('Could not approve allowance', err);
-      throw err;
-    }
+    api.rpc.chain.subscribeNewHeads(async (header: Header) => {
+      // this.logger.log('Incoming header', header);
+
+      const newHeader: PolkadotHeader = {
+        number: header.number.toNumber(),
+        hash: header.hash.toString(),
+      };
+      this.logger.log(`New header`, newHeader);
+
+      this.addHeader(newHeader);
+
+      if (this.headers.length === this.headerBatchSize) {
+        await this.writeToMerkleTree();
+      }
+    });
   }
 
-  async stake(address: string, amount: number) {
-    await this.approveAllowance(address, amount);
-
-    this.logger.log(`Stake amount of ${amount} for ${address}`);
-    const gasPrice = await this.provider.getGasPrice();
-    const gasEstimate = await this.stakingContract.estimateGas.stakeToken(amount);
-
-    try {
-      const tx: TransactionResponse = await this.stakingContract.functions.stakeToken(amount, {
-        gasPrice,
-        gasLimit: gasEstimate.toNumber() * 3
-      });
-      await tx.wait(1);
-      this.logger.log(`Tx hash: ${tx.hash}`);
-    } catch (err) {
-      this.logger.error('Could not stake', err);
-      throw err;
-    }
+  private addHeader(header: PolkadotHeader) {
+    this.headers.push(header);
   }
 
-  async claim() {
-    const gasPrice = await this.provider.getGasPrice();
-    const gasEstimate = await this.stakingContract.estimateGas.claimReward();
+  private async writeToMerkleTree() {
+    for (const header of this.headers) {
+      const key = Buffer.from(header.hash);
+      const value = Buffer.from(JSON.stringify(header));
 
-    try {
-      const tx: TransactionResponse = await this.stakingContract.functions.claimReward({
-        gasPrice,
-        gasLimit: gasEstimate.toNumber() * 3
-      });
-      await tx.wait(1);
-      this.logger.log(`Tx hash: ${tx.hash}`);
-    } catch (err) {
-      this.logger.error('Could not claim', err);
-      throw err;
+      await this.tree.put(key, value);
+      this.proofs[header.hash] = await this.generateMerkleProof(header.hash);
+      // const verifiedProof = await this.verifyMerkleProof(header.hash);
+      // this.logger.log(verifiedProof);
     }
+
+    const merkleRoot = this.tree.root;
+    this.merkleRoots.push(merkleRoot);
+
+    // Clear the headers array for the next batch
+    this.headers = [];
+  }
+
+  queryHeaderByNumber(number: number): PolkadotHeader | undefined {
+    return undefined;
+  }
+
+  async queryHeaderByHash(hash: string): Promise<PolkadotHeader> {
+    const header = await this.tree.get(Buffer.from(hash));
+    if (!header) {
+      throw new Error(`No header stored with given hash: ${hash}`);
+    }
+
+    return JSON.parse(header.toString());
+  }
+
+  async generateMerkleProof(hash: string): Promise<Proof> {
+    return await Tree.createProof(this.tree, Buffer.from(hash));
+  }
+
+  async verifyMerkleProof(hash: string): Promise<PolkadotHeader> {
+    const proof = await Tree.verifyProof(this.tree.root, Buffer.from(hash), this.proofs[hash]);
+    return JSON.parse(proof.toString());
   }
 }

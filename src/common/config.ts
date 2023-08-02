@@ -5,7 +5,7 @@ import { get } from 'env-var';
 
 export const config = () => ({
   node: {
-    // apiUrl: get('NODE_API_URL').required().asString(),
+    apiUrl: get('NODE_API_URL').required().asString(),
   },
   headerBatchSize: get('HEADER_BATCH_SIZE').required().asInt(),
 });

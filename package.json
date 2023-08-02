@@ -27,6 +27,7 @@
     "@polkadot/api": "^10.9.1",
     "@polkadot/util-crypto": "^12.3.2",
     "env-var": "^7.3.1",
+    "merkle-patricia-tree": "^4.2.4",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.2.0"
   },
