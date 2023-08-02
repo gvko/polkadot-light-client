@@ -63,6 +63,8 @@ export class ClientService {
   }
 
   private async writeToMerkleTree() {
+    this.logger.log('Write headers to merkle tree');
+
     for (const header of this.headers) {
       const key = Buffer.from(header.hash);
       const value = Buffer.from(JSON.stringify(header));
@@ -70,7 +72,7 @@ export class ClientService {
       await this.tree.put(key, value);
       this.proofs[header.hash] = await this.generateMerkleProof(header.hash);
       // const verifiedProof = await this.verifyMerkleProof(header.hash);
-      // this.logger.log(verifiedProof);
+      // this.logger.log(`Verified proof for hash ${header.hash}: `, verifiedProof);
     }
 
     const merkleRoot = this.tree.root;
