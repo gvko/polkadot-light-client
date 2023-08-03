@@ -73,6 +73,8 @@ export class ClientService {
       await this.tree.put(keyHash, value);
       await this.tree.put(keyNumber, value);
       this.proofs[header.hash] = await this.generateMerkleProof(header.hash);
+      // Commented lines left here for testing purposes - that the proof verification works.
+      // Would not happen in a production code.
       // const verifiedProof = await this.verifyMerkleProof(header.hash);
       // this.logger.log(`Verified proof for hash ${header.hash}: `, verifiedProof);
     }

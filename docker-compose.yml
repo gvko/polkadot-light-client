@@ -1,0 +1,15 @@
+version: '3'
+services:
+  # Server
+  api:
+    build: .
+    ports:
+      - '13000:5858'
+      - '3000:3000'
+    expose:
+      - 3000
+      - 5858 # for debugging the nodejs process inside a docker container
+    tty: true
+    volumes:
+      - './dist:/node/app/dist'
+    container_name: backend
